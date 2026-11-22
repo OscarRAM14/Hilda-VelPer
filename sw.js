@@ -1,5 +1,5 @@
 // Service worker: permite instalar la app y abrirla aunque falle el internet
-const VERSION = 'hv-1.1.0';
+const VERSION = 'hv-1.1.1';
 const SHELL = ['./', 'index.html', 'css/estilos.css', 'js/core.js', 'js/pedidos.js', 'js/catalogo.js', 'js/negocio.js', 'config.js', 'manifest.json', 'img/logo.jpg', 'img/logo-sello.png', 'icons/icon-192.png'];
 
 self.addEventListener('install', e => {

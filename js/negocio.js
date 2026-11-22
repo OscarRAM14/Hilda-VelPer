@@ -370,8 +370,8 @@ ruta('ajustes', () => {
       <label class="check"><input type="checkbox" name="recalcular"> Recalcular las tareas de los pedidos activos con estos tiempos</label>
       <button class="btn full" style="margin-top:6px">Guardar precios y tiempos</button></form>
     <div class="card"><h2>Usuarios</h2>
-      <p class="muted mini">Admin ve todo (cuentas, costos, precios). Ayudante ve pedidos, tareas, catálogo y lista de compras.</p>
-      ${S.d.perfiles.map(u => `<div class="li"><div class="grow"><div class="t">${esc(u.nombre)}</div><div class="muted mini">${esc(u.email || '')}</div></div>
+      <p class="muted mini">Admin ve todo (cuentas, costos, precios). Ayudante ve pedidos, tareas, catálogo y lista de compras. Toca el nombre para cambiar cómo saluda la app.</p>
+      ${S.d.perfiles.map(u => `<div class="li"><div class="grow"><input class="i" style="padding:6px 10px;font-weight:700" value="${esc(u.nombre)}" placeholder="Nombre" onchange="cambiarPerfil('${u.id}',{nombre:this.value.trim()})"><div class="muted mini" style="margin-top:3px">${esc(u.email || '')}</div></div>
         <select class="i" style="width:auto;padding:6px" onchange="cambiarPerfil('${u.id}',{rol:this.value})" ${u.id===S.perfil.id?'disabled':''}>
           <option value="admin" ${u.rol==='admin'?'selected':''}>Admin</option><option value="ayudante" ${u.rol==='ayudante'?'selected':''}>Ayudante</option></select>
         <label class="check" style="margin:0"><input type="checkbox" ${u.activo?'checked':''} ${u.id===S.perfil.id?'disabled':''} onchange="cambiarPerfil('${u.id}',{activo:this.checked})"> activo</label></div>`).join('')}
@@ -385,7 +385,7 @@ ruta('ajustes', () => {
     if (rec){ for (const p of activos()) await regenerarTareas(p); toast('✅ Tareas recalculadas'); }
   };
 });
-async function cambiarPerfil(id, patch){ await guardar(() => DB.upd('perfiles', id, patch), '✅ Usuario actualizado'); await recargar('perfiles'); }
+async function cambiarPerfil(id, patch){ await guardar(() => DB.upd('perfiles', id, patch), '✅ Usuario actualizado'); await recargar('perfiles'); if (id === S.perfil.id) S.perfil = byId('perfiles', id) || S.perfil; }
 
 /* ---------- COMPARTIR CATÁLOGO ---------- */
 ruta('compartir', async () => {
