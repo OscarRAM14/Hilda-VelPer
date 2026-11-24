@@ -1,9 +1,9 @@
 /* =====================================================================
    Hilda VelPer · núcleo: utilidades, base de datos, sesión y rutas
    ===================================================================== */
-const APP_VERSION = '1.1.1';
+const APP_VERSION = '1.3.0';
 const LOCAL = !(window.CONFIG && CONFIG.SUPABASE_URL && CONFIG.SUPABASE_KEY);
-const TABLAS = ['perfiles','productos','insumos','recetas','receta_insumos','pedidos','pedido_recetas','pagos','tareas','movimientos','mejoras'];
+const TABLAS = ['perfiles','clientes','solicitudes','productos','insumos','recetas','receta_insumos','pedidos','pedido_recetas','pagos','tareas','movimientos','mejoras'];
 const CATEGORIAS = ['Pasteles','Cupcakes','Gelatinas','Galletas','Postres','Otros'];
 const ESTADOS = {cotizacion:'Cotización',confirmado:'Confirmado',en_proceso:'En proceso',listo:'Listo',entregado:'Entregado',cancelado:'Cancelado'};
 const TIPO_TAREA = {comprar:['🛒','Comprar material'],hornear:['🔥','Preparar / hornear'],decorar:['🎨','Decorar'],entregar:['🚗','Entregar'],otro:['📝','Pendiente']};
@@ -162,9 +162,12 @@ async function guardar(fn, okMsg){
    MODO DEMO: datos de ejemplo
    ===================================================================== */
 const AJUSTES_DEF = { tarifa_hora:60, gastos_fijos_mes:800, pedidos_mes:8, margen_pct:30, empaque_default:40, precio_persona:0, redondeo:10,
-  dias_compra:3, dias_horneado:2, dias_decorado:1, umbral_grande:40, dias_extra_grande:1 };
+  dias_compra:3, dias_horneado:2, dias_decorado:1, umbral_grande:40, dias_extra_grande:1,
+  capacidad_dia:3, meta_mes:0, tamanos:'10,20,30,50', aviso_temporada:21, plantillas:{},
+  margen_minimo:25, pago_info:'', link_pago:'', anticipo_pct:50 };
 const NEGOCIO_DEF = { nombre:'Hilda VelPer', lema:'Pasteles y Postres', whatsapp:'', facebook:'', instagram:'',
-  mensaje_catalogo:'Pasteles caseros, cupcakes, gelatinas, galletas caseras… ¡y más!' };
+  mensaje_catalogo:'Pasteles caseros, cupcakes, gelatinas, galletas caseras… ¡y más!',
+  resena_google:'', resena_facebook:'', moldes:'15:12,20:22,25:35,30:50' };
 
 function sembrarDemo(){
   if (localStorage.getItem('hv_sembrado')) return;
@@ -232,6 +235,30 @@ function sembrarDemo(){
   localStorage.setItem('hv_sembrado', '1');
 }
 
+/* Demo: agrega lo nuevo de v1.2.0 a datos de prueba viejos */
+function migrarDemo(){
+  const G = t => JSON.parse(localStorage.getItem('hv_'+t) || '[]'), P = (t,v) => localStorage.setItem('hv_'+t, JSON.stringify(v));
+  if (localStorage.getItem('hv_clientes') === null){
+    const peds = G('pedidos'), cls = [];
+    peds.forEach(p => { let c = cls.find(x => x.nombre.toLowerCase() === p.cliente.toLowerCase());
+      if (!c){ c = { id:uid(), nombre:p.cliente, telefono:p.telefono || '', cumpleanos:null, notas:'', creado:new Date().toISOString() }; cls.push(c); }
+      p.cliente_id = c.id; });
+    if (cls[0]) cls[0].cumpleanos = ymd(addDays(new Date(), 6)).replace(/^\d{4}/, '1990');
+    P('clientes', cls); P('pedidos', peds);
+    const prods = G('productos'); const u = prods.find(p => p.nombre === 'Pastel Unicornio');
+    if (u) u.precios = { 10:450, 20:750, 30:1000, 50:1500 };
+    P('productos', prods);
+    const aj = JSON.parse(localStorage.getItem('hv_ajustes') || '{}'); aj.meta_mes = aj.meta_mes || 8000; localStorage.setItem('hv_ajustes', JSON.stringify(aj));
+  }
+  if (localStorage.getItem('hv_solicitudes') === null){
+    const prods = G('productos'); const u = prods.find(p => p.nombre === 'Pastel Unicornio');
+    if (u){ u.recetas = G('recetas').map(r => r.id); P('productos', prods); }
+    P('solicitudes', [{ id:uid(), nombre:'Ejemplo: Karla Ruiz', telefono:'4771112233', fecha_deseada: ymd(addDays(new Date(), 12)), personas:30,
+      producto_id: u ? u.id : null, producto_nombre: u ? u.nombre : '', sabor:'Chocolate con fresa', mensaje:'Para mi hija, en tonos lila con su nombre: Valeria',
+      foto_ref_url:'img/ejemplos/unicornio.jpg', estado:'nueva', creado:new Date().toISOString() }]);
+  }
+}
+
 /* Calcula las fechas de compra, horneado, decorado y entrega de un pedido */
 function planTareas(p){
   const A = {...AJUSTES_DEF, ...S.ajustes};
@@ -266,7 +293,7 @@ async function iniciar(){
   if ('serviceWorker' in navigator && location.protocol.startsWith('http')) navigator.serviceWorker.register('sw.js').catch(()=>{});
   const publico = new URLSearchParams(location.search).has('catalogo');
   if (LOCAL){
-    sembrarDemo();
+    sembrarDemo(); migrarDemo();
     if (publico){ S.negocio = await DB.one('negocio'); S.d.productos = await DB.all('productos'); return vistaPublica(); }
     await cargarTodo();
     S.perfil = byId('perfiles', localStorage.getItem('hv_yo')) || S.d.perfiles[0];
@@ -340,6 +367,7 @@ const RUTAS = {};
 function ruta(nombre, fn){ RUTAS[nombre] = fn; }
 function ir(h){ location.hash = h; }
 function arrancarRutas(){
+  setTimeout(() => { try { prepararAvisos(); avisoAlAbrir(); } catch(e){} }, 1500);
   window.onhashchange = render;
   if (!location.hash) location.hash = '#/hoy';
   render();
@@ -359,6 +387,8 @@ function pagina(titulo, html, { atras=false, nav } = {}){
   const navItems = NAV.filter(n => n[0] !== 'cotizar' || isAdmin());
   $('#app').innerHTML = `
     ${LOCAL ? '<div class="demo-band">MODO DEMO · los datos solo se guardan en este celular</div>' : ''}
+    ${!LOCAL && isAdmin() && S.ajustes && !('capacidad_dia' in S.ajustes) ? '<div class="demo-band" style="background:var(--error)">⚠️ Falta correr 03_actualizar_v1.2.0.sql en Supabase</div>' : ''}
+    ${!LOCAL && isAdmin() && S.ajustes && ('capacidad_dia' in S.ajustes) && !('margen_minimo' in S.ajustes) ? '<div class="demo-band" style="background:var(--error)">⚠️ Falta correr 04_actualizar_v1.3.0.sql en Supabase</div>' : ''}
     <header class="top">
       ${atras ? '<button class="back" onclick="history.back()" aria-label="Atrás">‹</button>' : '<img src="img/logo.jpg" alt="">'}
       <div class="t"><b>${esc(titulo)}</b><small>Hilda VelPer · Pasteles y Postres</small></div>

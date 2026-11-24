@@ -2,7 +2,7 @@
    Catálogo · Producto · Editor de imágenes · Catálogo público
    ===================================================================== */
 let catSel = 'Todos', busCat = '';
-const precioTxt = p => p.precio ? (p.precio_desde ? 'Desde ' : '') + money(p.precio) : 'Cotizar';
+const precioTxt = p => { const t = preciosDe(p); if (t.length) return 'Desde ' + money(Math.min(...t.map(x => x[1]))); return p.precio ? (p.precio_desde ? 'Desde ' : '') + money(p.precio) : 'Cotizar'; };
 
 function prodCard(p, href){
   return `<a class="prod" href="${href}">
@@ -48,8 +48,10 @@ ruta('producto', id => {
       <div class="row between"><h2 style="margin:0">${esc(p.nombre)}</h2><span class="money" style="color:var(--fucsia);font-size:19px">${precioTxt(p)}</span></div>
       <p class="muted">${esc(p.categoria)}${p.personas ? ' · ' + p.personas + ' personas' : ''}${pedidos ? ' · pedido ' + pedidos + ' veces' : ''}${p.publico ? '' : ' · <b>oculto del catálogo público</b>'}</p>
       <p>${esc(p.descripcion)}</p>
-      <div class="row wrap">
+      ${tablaTamanos(p)}
+      <div class="row wrap" style="margin-top:10px">
         <a class="btn fucsia" href="#/editor/${p.id}">📸 Editar imagen para redes</a>
+        <button class="btn sec" onclick="modalTextos('${p.id}')">✍️ Texto para redes</button>
         ${isAdmin() ? `<a class="btn sec" href="#/producto-editar/${p.id}">✏️ Editar datos</a>` : ''}
       </div>
       <div class="row wrap" style="margin-top:10px">
@@ -63,7 +65,7 @@ ruta('producto', id => {
 });
 function nuevoPedidoDe(id){
   const p = byId('productos', id);
-  S.borradorPedido = { producto_id:id, descripcion:p.nombre, personas:p.personas || 20, precio:p.precio || '' };
+  S.borradorPedido = { producto_id:id, descripcion:p.nombre, personas:p.personas || 20, precio:p.precio || '', recetas:(p.recetas || []).filter(r => byId('recetas', r)) };
   ir('#/pedido-nuevo');
 }
 async function compartirURL(url, nombre){
@@ -99,8 +101,15 @@ function formProducto(p){
       <div><label class="f">Personas</label><input class="i" type="number" inputmode="numeric" name="personas" value="${p.personas ?? ''}"></div>
     </div>
     <label class="check"><input type="checkbox" name="precio_desde" ${p.precio_desde?'checked':''}> Mostrar como "Desde $…"</label>
+    <div class="card lila" style="margin:8px 0"><h3 style="margin-top:0">Precio por tamaño (opcional)</h3>
+      <p class="muted mini" style="margin-top:-6px">Si lo llenas, al hacer un pedido el precio se pone solo según las personas.</p>
+      <div class="grid2">${[...new Set([...tamanos(), ...preciosDe(p).map(x => x[0])])].sort((a,b)=>a-b).map(t => `<div><label class="f">${t} personas</label>
+        <input class="i" type="number" inputmode="decimal" data-tam="${t}" value="${(p.precios||{})[t] ?? ''}"></div>`).join('')}</div></div>
     <label class="check"><input type="checkbox" name="publico" ${p.publico?'checked':''}> Mostrar en el catálogo público</label>
     <label class="check"><input type="checkbox" name="destacado" ${p.destacado?'checked':''}> ★ Favorito (sale primero)</label>
+    ${S.d.recetas.length ? `<div class="card lila" style="margin:8px 0"><h3 style="margin-top:0">Recetas que lleva</h3>
+      <p class="muted mini" style="margin-top:-6px">Se marcan solas en pedidos y cotizaciones, y sirven para la alerta de precios.</p>
+      ${S.d.recetas.map(r => `<label class="check" style="margin:6px 0"><input type="checkbox" data-prec="${r.id}" ${(p.recetas||[]).includes(r.id)?'checked':''}> ${esc(r.nombre)}</label>`).join('')}</div>` : ''}
     <button class="btn full" style="margin-top:8px">💾 Guardar</button>
     ${!nuevo ? '<button type="button" class="btn peligro full" style="margin-top:10px" id="borrar">Eliminar del catálogo</button>' : ''}
   </form>`, { atras:true, nav:'catalogo' });
@@ -113,8 +122,9 @@ function formProducto(p){
     e.preventDefault(); const btn = e.target.querySelector('.btn.full'); btn.disabled = true; btn.textContent = 'Subiendo…';
     try {
       const f = formData(e.target);
+      const precios = {}; $$('[data-tam]').forEach(i => { if (num(i.value) > 0) precios[i.dataset.tam] = num(i.value); });
       const row = { nombre:f.nombre, categoria:f.categoria, descripcion:f.descripcion, precio:f.precio, personas:f.personas,
-        precio_desde:f.precio_desde, publico:f.publico, destacado:f.destacado };
+        precio_desde:f.precio_desde, publico:f.publico, destacado:f.destacado, precios, recetas: $$('[data-prec]').filter(c => c.checked).map(c => c.dataset.prec) };
       const file = $('#foto').files[0];
       if (file) row.foto_url = await DB.subir(await comprimir(file), 'productos');
       const r = nuevo ? await DB.ins('productos', row) : await DB.upd('productos', p.id, row);
@@ -151,6 +161,7 @@ ruta('editor', async (pid) => {
       <button class="btn sec" id="edesc">⬇️ Descargar</button>
     </div>
     ${p && isAdmin() ? '<button class="btn full" style="margin-bottom:10px" id="eguard">💾 Guardar en el producto</button>' : ''}
+    <button class="btn sec full" style="margin-bottom:10px" onclick="modalTextos(${p ? `'${p.id}'` : "''"})">✍️ Texto para acompañar la foto</button>
     <div class="chips">${Object.entries(FORMATOS).map(([k,v]) => `<button class="chip ${E.fmt===k?'on':''}" data-fmt="${k}">${v[2]}</button>`).join('')}</div>
     <div class="card">
       <h3>Texto</h3>
@@ -288,6 +299,8 @@ function vistaPublica(){
       <div class="pub-hero"><img src="img/logo.jpg" alt="${esc(N.nombre)}">
         <h1 style="margin:6px 0 0">${esc(N.nombre)}</h1><p style="margin:0;color:var(--morado);font-weight:700">${esc(N.lema)}</p>
         <p class="muted">${esc(N.mensaje_catalogo)}</p>
+        <div class="grid2" style="max-width:420px;margin:0 auto 10px"><button class="btn fucsia" onclick="formSolicitudPublica('')">📝 Pedir cotización</button>
+          <button class="btn sec" onclick="simuladorPublico()">🎂 ¿Qué tamaño?</button></div>
         <div class="row" style="justify-content:center;gap:8px">
           ${N.facebook ? `<a class="btn sec chico" href="${esc(N.facebook)}" target="_blank">Facebook</a>` : ''}
           ${N.instagram ? `<a class="btn sec chico" href="${esc(N.instagram)}" target="_blank">Instagram</a>` : ''}
@@ -304,7 +317,8 @@ function vistaPublica(){
     modal(`<img class="foto-det" src="${esc(p.foto_url)}">
       <h2 style="margin-top:12px">${esc(p.nombre)}</h2>
       <p class="money" style="color:var(--fucsia);font-size:19px;margin:0">${precioTxt(p)}${p.personas ? ` <span class="muted" style="font-size:14px">· ${p.personas} personas</span>` : ''}</p>
-      <p>${esc(p.descripcion)}</p>
+      <p>${esc(p.descripcion)}</p>${tablaTamanos(p)}
+      <button class="btn fucsia full" style="margin-bottom:8px" onclick="formSolicitudPublica('${p.id}')">📝 Pedir este pastel</button>
       ${N.whatsapp ? `<a class="btn verde full" target="_blank" href="${waLink(N.whatsapp, `Hola, me interesa el "${p.nombre}" que vi en su catálogo. ¿Me pueden cotizar para ___ personas el día ___?`)}">💬 Lo quiero, preguntar por WhatsApp</a>` : ''}
       <button class="btn sec full" style="margin-top:8px" onclick="closeModal()">Cerrar</button>`);
   };

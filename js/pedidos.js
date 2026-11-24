@@ -49,8 +49,14 @@ ruta('hoy', () => {
       <div class="stat"><b>${money(porCobrar)}</b><small>por cobrar</small></div>
       <div class="stat"><b style="color:${ingMes-gasMes>=0?'var(--ok)':'var(--error)'}">${money(ingMes-gasMes)}</b><small>ganancia del mes</small></div>
     </div>` : ''}
+    ${tarjetaSolicitudes()}
+    ${tarjetaAlertas()}
+    ${tarjetaMeta()}
     <div class="card"><h2>Para hoy ${pend.length ? `<span class="pill-cnt">${pend.length}</span>` : ''}</h2>
-      ${pend.length ? pend.map(t => tareaHTML(t)).join('') : '<p class="muted">Nada pendiente para hoy 🎉</p>'}</div>
+      ${pend.length ? pend.map(t => tareaHTML(t)).join('') : '<p class="muted">Nada pendiente para hoy 🎉</p>'}${rutaDelDia(h)}</div>
+    ${tarjetaTemporada()}
+    ${tarjetaEscribirle()}
+    ${tarjetaRespaldo()}
     <div class="card"><h2>Próximos 7 días</h2>
       ${prox.length ? prox.map(t => tareaHTML(t)).join('') : '<p class="muted">Sin tareas esta semana.</p>'}</div>
     <div class="card"><div class="row between"><h2>Próximas entregas</h2><a href="#/pedidos" class="mini">Ver todos</a></div>
@@ -103,7 +109,8 @@ function calendarioHTML(){
   for (let i = 0; i < 42; i++){
     const d = addDays(ini, i); const k = ymd(d);
     if (i >= 35 && d.getMonth() !== m) break;
-    celdas += `<div class="d ${d.getMonth()!==m?'fuera':''} ${k===h?'hoy':''} ${k===diaSel?'sel':''}" onclick="diaSel='${k}';render()">${d.getDate()}
+    const lleno = (ent[k]||[]).filter(p => !['cotizacion'].includes(p.estado)).length >= (num(A().capacidad_dia) || 3);
+    celdas += `<div class="d ${d.getMonth()!==m?'fuera':''} ${k===h?'hoy':''} ${k===diaSel?'sel':''}" ${lleno && k!==diaSel ? 'style="background:#fbe0e4"' : ''} onclick="diaSel='${k}';render()">${d.getDate()}
       <div class="dots">${(ent[k]||[]).map(() => '<span class="dot e"></span>').join('')}${(tar[k]||[]).slice(0,3).map(() => '<span class="dot"></span>').join('')}</div></div>`;
   }
   const delDia = (ent[diaSel] || []);
@@ -119,7 +126,8 @@ function calendarioHTML(){
     ${delDia.length ? delDia.map(pedidoMini).join('') : ''}
     ${tDia.length ? tDia.map(t => tareaHTML(t)).join('') : ''}
     ${!delDia.length && !tDia.length ? '<p class="muted">Día libre.</p>' : ''}
-    <a class="btn sec chico" href="#/pedido-nuevo/${diaSel}" style="margin-top:8px">＋ Pedido para este día</a>
+    ${avisoCapacidad(diaSel)}
+    <a class="btn sec chico" href="#/pedido-nuevo/${diaSel}" style="margin-top:8px">＋ Pedido para este día</a> ${rutaDelDia(diaSel)}
   </div>`;
 }
 
@@ -140,7 +148,8 @@ function formPedido(p, fecha){
   pagina(nuevo ? 'Nuevo pedido' : `Pedido #${p.folio}`, `
   <form id="fp">
     <div class="card"><h2>Cliente</h2>
-      <label class="f">Nombre *</label><input class="i" name="cliente" required value="${esc(p.cliente)}">
+      <label class="f">Nombre *</label><input class="i" name="cliente" required value="${esc(p.cliente)}" list="dlcli" autocomplete="off" placeholder="Escribe y elige de tus clientes">
+      <datalist id="dlcli">${S.d.clientes.map(c => `<option value="${esc(c.nombre)}">${esc(c.telefono || '')}</option>`).join('')}</datalist>
       <label class="f">WhatsApp / teléfono</label><input class="i" name="telefono" type="tel" inputmode="tel" value="${esc(p.telefono)}" placeholder="10 dígitos">
     </div>
     <div class="card"><h2>Pastel</h2>
@@ -149,7 +158,7 @@ function formPedido(p, fecha){
         ${prods.map(x => `<option value="${x.id}" ${x.id===p.producto_id?'selected':''}>${esc(x.nombre)}</option>`).join('')}</select>
       <label class="f">Descripción / tema</label><textarea class="i" name="descripcion" placeholder="Ej. Pastel de unicornio rosa con nombre Sofi">${esc(p.descripcion)}</textarea>
       <div class="grid2">
-        <div><label class="f">Personas</label><input class="i" name="personas" type="number" min="1" inputmode="numeric" value="${p.personas}"></div>
+        <div><label class="f">Personas</label><input class="i" name="personas" type="number" min="1" inputmode="numeric" value="${p.personas}"><div class="muted mini" id="pisosHint"></div></div>
         <div><label class="f">Sabor</label><input class="i" name="sabor" value="${esc(p.sabor)}"></div>
         <div><label class="f">Relleno</label><input class="i" name="relleno" value="${esc(p.relleno)}"></div>
         <div><label class="f">Decoración</label><input class="i" name="decoracion" value="${esc(p.decoracion)}"></div>
@@ -160,6 +169,7 @@ function formPedido(p, fecha){
     </div>
     <div class="card"><h2>Entrega</h2>
       <label class="f">Fecha y hora *</label><input class="i" type="datetime-local" name="fecha_entrega" required value="${ent}">
+      <div id="capAviso"></div>
       <div class="chips" style="margin-top:10px">
         <label class="chip ${p.tipo_entrega==='recoge'?'on':''}"><input type="radio" name="tipo_entrega" value="recoge" ${p.tipo_entrega==='recoge'?'checked':''} hidden onchange="this.closest('.chips').querySelectorAll('.chip').forEach(c=>c.classList.toggle('on',c.contains(this)));document.getElementById('dom').hidden=true"> 🏠 Recoge</label>
         <label class="chip ${p.tipo_entrega==='domicilio'?'on':''}"><input type="radio" name="tipo_entrega" value="domicilio" ${p.tipo_entrega==='domicilio'?'checked':''} hidden onchange="this.closest('.chips').querySelectorAll('.chip').forEach(c=>c.classList.toggle('on',c.contains(this)));document.getElementById('dom').hidden=false"> 🚗 A domicilio</label>
@@ -171,7 +181,7 @@ function formPedido(p, fecha){
     </div>
     <div class="card"><h2>Precio</h2>
       <div class="grid2">
-        <div><label class="f">Precio del pastel</label><input class="i" name="precio" type="number" inputmode="decimal" value="${p.precio ?? ''}"></div>
+        <div><label class="f">Precio del pastel</label><input class="i" name="precio" type="number" inputmode="decimal" value="${p.precio ?? ''}"><div class="muted mini" id="precioHint"></div></div>
         ${nuevo ? `<div><label class="f">Anticipo recibido</label><input class="i" name="anticipo" type="number" inputmode="decimal" value="${borrador.anticipo || ''}" placeholder="0"></div>` : ''}
       </div>
       ${isAdmin() ? `<button type="button" class="btn sec chico" style="margin-top:10px" id="aCot">🧮 Calcular con el cotizador</button>` : ''}
@@ -186,6 +196,21 @@ function formPedido(p, fecha){
   </form>`, { atras:true, nav:'pedidos' });
 
   const form = $('#fp');
+  // capacidad por día
+  const capUpd = () => { const v = form.fecha_entrega.value; $('#capAviso').innerHTML = v ? avisoCapacidad(v.slice(0,10), p.id) : ''; };
+  form.fecha_entrega.addEventListener('change', capUpd); capUpd();
+  // cliente: al elegir uno del directorio se llena su teléfono
+  form.cliente.addEventListener('change', () => { const c = S.d.clientes.find(x => x.nombre.toLowerCase() === form.cliente.value.trim().toLowerCase());
+    if (c && !form.telefono.value) form.telefono.value = c.telefono || ''; });
+  // precio según la tabla de tamaños del producto
+  let precioTocado = (!nuevo && num(p.precio) > 0) || !!borrador._precioFijo;
+  form.precio.addEventListener('input', () => { precioTocado = true; });
+  const precioUpd = () => { const prod = byId('productos', form.producto_id.value); const r = prod && precioPorTamano(prod, num(form.personas.value) || 1);
+    $('#precioHint').textContent = r ? `Según tu tabla: ${money(r.precio)}${r.extra ? ' (calculado)' : ` (${r.tam} pers.)`}` : '';
+    if (r && !precioTocado) form.precio.value = r.precio; };
+  form.producto_id.addEventListener('change', precioUpd); form.personas.addEventListener('input', precioUpd); precioUpd();
+  const pisosUpd = () => { const r = sugerirPisos(Math.max(1, num(form.personas.value))); $('#pisosHint').textContent = r ? '🎂 ' + textoPisos(r) : ''; };
+  form.personas.addEventListener('input', pisosUpd); pisosUpd();
   $('#aCot') && ($('#aCot').onclick = () => {
     const f = formData(form);
     S.cotizacion = { ...(S.cotizacion||{}), personas: f.personas || 20, producto_id: f.producto_id || '', recetas: S.d.recetas.filter(r => f['rec_'+r.id]).map(r => r.id),
@@ -207,8 +232,11 @@ function formPedido(p, fecha){
         sabor:f.sabor, relleno:f.relleno, decoracion:f.decoracion, fecha_entrega:new Date(f.fecha_entrega).toISOString(),
         tipo_entrega: form.querySelector('[name=tipo_entrega]:checked')?.value || 'recoge', direccion:f.direccion || '', envio:f.envio || 0,
         precio:f.precio || 0, estado:f.estado, notas:f.notas };
+      const cli = await asegurarCliente(row.cliente, row.telefono); row.cliente_id = cli.id;
+      if (borrador.costo != null) row.costo = borrador.costo;
       const file = $('#fotoRef').files[0];
       if (file) row.foto_ref_url = await DB.subir(await comprimir(file), 'referencias');
+      else if (nuevo && borrador.foto_ref_url) row.foto_ref_url = borrador.foto_ref_url;
       let ped;
       if (nuevo){
         ped = await DB.ins('pedidos', row);
@@ -220,7 +248,9 @@ function formPedido(p, fecha){
         await DB.ins('pedido_recetas', { pedido_id:ped.id, receta_id:r.id, factor:+(num(row.personas) / Math.max(1, num(r.rinde_personas))).toFixed(2) });
       await recargar('pedidos','pagos','pedido_recetas');
       await regenerarTareas(ped);
+      await descontarAlacena(byId('pedidos', ped.id) || ped);
       toast('✅ Pedido guardado');
+      if (borrador.solicitud_id){ await DB.upd('solicitudes', borrador.solicitud_id, { estado:'convertida', pedido_id:ped.id }); await recargar('solicitudes'); }
       history.replaceState(null, '', '#/pedido/' + ped.id); render();
     } catch(err){ console.error(err); toast('⚠️ ' + err.message, 4000); btn.disabled = false; btn.textContent = '💾 Guardar pedido'; }
   };
@@ -240,7 +270,7 @@ ruta('pedido', id => {
   const detalle = `${p.descripcion}\n${p.personas} personas · ${p.sabor} ${p.relleno ? '/ ' + p.relleno : ''}\nTel: ${p.telefono}\nTotal ${money(totalPedido(p))} · Resta ${money(s)}`;
   pagina(`Pedido #${p.folio ?? ''}`, `
     <div class="card">
-      <div class="row between"><h2 style="margin:0">${esc(p.cliente)}</h2><span class="tag ${p.estado}">${ESTADOS[p.estado]}</span></div>
+      <div class="row between"><h2 style="margin:0">${p.cliente_id ? `<a href="#/cliente/${p.cliente_id}" style="text-decoration:none">${p.cliente_id && esFrecuente(p.cliente_id) ? '⭐ ' : ''}${esc(p.cliente)} ›</a>` : esc(p.cliente)}</h2><span class="tag ${p.estado}">${ESTADOS[p.estado]}</span></div>
       <p class="big" style="margin:8px 0 2px">${fLarga(p.fecha_entrega)}</p>
       <p class="muted" style="margin:0">${p.tipo_entrega === 'domicilio' ? '🚗 A domicilio: ' + esc(p.direccion || 'sin dirección') : '🏠 Pasan a recoger'}</p>
       ${foto ? `<img src="${esc(foto)}" class="foto-det" style="margin-top:12px;max-height:320px;object-fit:cover">` : ''}
@@ -250,19 +280,28 @@ ruta('pedido', id => {
       ${p.notas ? `<div class="nota">${esc(p.notas)}</div>` : ''}
       <div class="row wrap" style="margin-top:12px">
         <a class="btn chico" href="#/pedido-editar/${p.id}">✏️ Editar</a>
-        ${p.telefono ? `<a class="btn verde chico" target="_blank" href="${waLink(p.telefono, mensajeConfirmacion(p))}">💬 Confirmar por WhatsApp</a>` : ''}
+        <button class="btn sec chico" onclick="duplicarPedido('${p.id}')">🔁 Duplicar</button>
         <a class="btn sec chico" target="_blank" href="${gcalLink({ titulo:`🎂 Entregar pastel · ${p.cliente}`, inicio:ent, fin, detalles:detalle, lugar:p.direccion })}">📅 Google Calendar</a>
       </div>
     </div>
+    <div class="card"><h2>💬 Mensajes al cliente</h2>${botonesPlantillas(p)}</div>
     <div class="card"><h2>Estado</h2><div class="chips" style="flex-wrap:wrap">
       ${Object.entries(ESTADOS).map(([k,v]) => `<button class="chip ${p.estado===k?'on':''}" onclick="cambiarEstado('${p.id}','${k}')">${v}</button>`).join('')}</div></div>
+    <div class="card"><h2>📷 Pastel terminado</h2>
+      ${p.foto_final_url ? `<div class="grid2">${p.foto_ref_url ? `<div><p class="muted mini" style="margin:0 0 4px">Inspiración</p><img src="${esc(p.foto_ref_url)}" class="foto-det" style="aspect-ratio:1;object-fit:cover"></div>` : ''}
+        <div><p class="muted mini" style="margin:0 0 4px">Terminado</p><img src="${esc(p.foto_final_url)}" class="foto-det" style="aspect-ratio:1;object-fit:cover"></div></div>
+        <div class="row wrap" style="margin-top:10px"><a class="btn fucsia chico" href="#/antes-despues/${p.id}">📸 Publicación antes/después</a>
+        ${isAdmin() ? `<button class="btn sec chico" onclick="finalAlCatalogo('${p.id}')">＋ Al catálogo</button>` : ''}</div>` : '<p class="muted mini" style="margin-top:-4px">Toma una foto cuando esté listo: sirve para tu galería y tus redes.</p>'}
+      <label class="btn sec chico" style="margin-top:10px">📷 ${p.foto_final_url ? 'Cambiar foto' : 'Subir foto del pastel'}<input type="file" accept="image/*" hidden onchange="subirFotoFinal('${p.id}', this)"></label>
+    </div>
     <div class="card"><h2>Dinero</h2>
       <div class="res"><span>Pastel</span><span class="money">${money(p.precio)}</span></div>
       ${num(p.envio) ? `<div class="res"><span>Envío</span><span class="money">${money(p.envio)}</span></div>` : ''}
-      ${pagos.map(x => `<div class="res"><span>${x.tipo === 'anticipo' ? 'Anticipo' : x.tipo === 'saldo' ? 'Pago del saldo' : 'Pago'} · ${fCorta(x.fecha)} <span class="muted mini">${esc(x.metodo)}</span></span>
+      ${pagos.map(x => `<div class="res"><span>${x.tipo === 'anticipo' ? 'Anticipo' : x.tipo === 'saldo' ? 'Pago del saldo' : 'Pago'} · ${fCorta(x.fecha)} <span class="muted mini">${esc(x.metodo)}</span>${x.comprobante_url ? ` <a href="${esc(x.comprobante_url)}" target="_blank" class="mini">🧾</a>` : ''}</span>
         <span class="money" style="color:var(--ok)">−${money(x.monto)} ${isAdmin() ? `<button class="btn peligro chico" style="padding:2px 7px" onclick="borrarPago('${x.id}')">✕</button>` : ''}</span></div>`).join('')}
       <div class="res total"><span>${s > 0 ? 'Resta por cobrar' : s < 0 ? 'Saldo a favor' : 'Pagado completo ✅'}</span><span style="color:${s>0?'var(--alerta)':'var(--ok)'}">${money(Math.abs(s))}</span></div>
       <button class="btn fucsia full" onclick="modalPago('${p.id}')">💵 Registrar pago</button>
+      ${saldo(p) > 0 ? botonPago(p) : ''}
     </div>
     <div class="card"><h2>Tareas del pedido</h2>
       ${tareas.length ? tareas.map(t => `${tareaHTML(t, { conPedido:false })}
@@ -288,7 +327,8 @@ function mensajeConfirmacion(p){
 }
 async function cambiarEstado(id, estado){
   const p = await guardar(() => DB.upd('pedidos', id, { estado }), 'Estado: ' + ESTADOS[estado]);
-  await recargar('pedidos'); await regenerarTareas(p); render();
+  await recargar('pedidos'); await regenerarTareas(p); await descontarAlacena(byId('pedidos', id) || p); render();
+  if (estado === 'entregado' && p.telefono) toast('💜 Tip: en unos días mándale "Pedir reseña"', 3500);
 }
 async function asignar(tid, perfil){ await guardar(() => DB.upd('tareas', tid, { asignado_a: perfil || null }), perfil ? '👤 Asignada a ' + nombrePerfil(perfil) : 'Sin asignar'); await recargar('tareas'); }
 async function borrarPago(id){ if (!await confirmar('¿Borrar este pago?')) return; await guardar(() => DB.del('pagos', id), 'Pago borrado'); await recargar('pagos'); render(); }
@@ -299,9 +339,12 @@ function modalPago(pid){
     <label class="f">Tipo</label><select class="i" name="tipo"><option value="anticipo" ${pagado(pid)?'':'selected'}>Anticipo</option><option value="saldo" ${pagado(pid)?'selected':''}>Pago del saldo</option><option value="otro">Otro</option></select>
     <label class="f">Forma de pago</label><select class="i" name="metodo"><option>efectivo</option><option>transferencia</option><option>tarjeta</option></select>
     <label class="f">Fecha</label><input class="i" type="date" name="fecha" value="${hoy()}">
+    <label class="f">Foto del comprobante (opcional)</label><input class="i" type="file" accept="image/*" id="pgComp">
     <button class="btn full" style="margin-top:14px">Guardar pago</button></form>`, m => {
-    $('#fpg', m).onsubmit = async e => { e.preventDefault(); const f = formData(e.target);
-      await guardar(() => DB.ins('pagos', { pedido_id:pid, monto:f.monto, tipo:f.tipo, metodo:f.metodo, fecha:f.fecha }), '💵 Pago registrado');
+    $('#fpg', m).onsubmit = async e => { e.preventDefault(); const f = formData(e.target); const btn = e.target.querySelector('.btn.full'); btn.disabled = true;
+      const fc = $('#pgComp', m).files[0]; const row = { pedido_id:pid, monto:f.monto, tipo:f.tipo, metodo:f.metodo, fecha:f.fecha };
+      try { if (fc) row.comprobante_url = await DB.subir(await comprimir(fc, 1400, 0.8), 'comprobantes'); } catch(err){ toast('⚠️ No se subió el comprobante: ' + err.message, 4000); }
+      await guardar(() => DB.ins('pagos', row), '💵 Pago registrado');
       await recargar('pagos'); closeModal(); render(); };
   });
 }

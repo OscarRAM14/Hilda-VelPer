@@ -113,3 +113,21 @@ input[type=range]{width:100%;accent-color:var(--fucsia)}
 hr{border:0;border-top:1px solid var(--linea);margin:12px 0}
 .mini{font-size:12px}
 .nota{background:#FFF6D9;border-left:4px solid var(--amarillo-o);padding:8px 10px;border-radius:8px;font-size:13px;margin:8px 0}
+
+/* ---------- MODO OSCURO (v1.3.0) ---------- */
+html[data-tema=oscuro]{--crema:#1A1222;--texto:#F1E9F6;--gris:#BBB0C6;--linea:#3A2D48;--amarillo:#3B3418;--amarillo-o:#7A6A22;
+  --morado:#9B6BC6;--morado-o:#E6CCF4;--lila:#B08FD0;--fucsia:#F25BE3;--sombra:0 4px 16px rgba(0,0,0,.45);color-scheme:dark}
+html[data-tema=oscuro] body{background:var(--crema)}
+html[data-tema=oscuro] .card,html[data-tema=oscuro] .prod,html[data-tema=oscuro] .stat,html[data-tema=oscuro] .chip,
+html[data-tema=oscuro] .btn.sec,html[data-tema=oscuro] .btn.peligro,html[data-tema=oscuro] input.i,html[data-tema=oscuro] select.i,
+html[data-tema=oscuro] textarea.i,html[data-tema=oscuro] nav.bottom,html[data-tema=oscuro] .cal .d,html[data-tema=oscuro] header.top .back{background:#281D33}
+html[data-tema=oscuro] .chip.on{background:var(--morado);color:#fff}
+html[data-tema=oscuro] .cal .d.sel{background:var(--morado)}
+html[data-tema=oscuro] header.top{background:linear-gradient(180deg,#33244A,#251A30);border-color:var(--lila)}
+html[data-tema=oscuro] .card.lila{background:#31244A}
+html[data-tema=oscuro] .card.amarillo,html[data-tema=oscuro] .nota,html[data-tema=oscuro] .res.sug{background:#3B3418;color:var(--texto)}
+html[data-tema=oscuro] .li .ic{background:#33264A}
+html[data-tema=oscuro] .tag.cotizacion{background:#3a3a3a;color:#ddd}
+html[data-tema=oscuro] .modal{background:#1F1628}
+html[data-tema=oscuro] header.top img,html[data-tema=oscuro] .pub-hero img{background:#fff}
+html[data-tema=oscuro] .tag.confirmado{color:#4E2466}

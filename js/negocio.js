@@ -6,6 +6,7 @@ const costoUnit = i => num(i.presentacion_precio) / Math.max(0.0001, num(i.prese
 const costoReceta = rid => S.d.receta_insumos.filter(x => x.receta_id === rid)
   .reduce((s, x) => { const i = byId('insumos', x.insumo_id); return s + (i ? num(x.cantidad) * costoUnit(i) : 0); }, 0);
 const TIPOS_REC = { base:'🍰 Pan / base', relleno:'🍓 Relleno', betun:'🧁 Betún / cubierta', decoracion:'🎨 Decoración', otro:'📦 Otro' };
+const NIVELES = [['Sencillo',0],['Medio',1],['Elaborado',2.5],['Muy elaborado',4]];
 const soloAdmin = () => { if (!isAdmin()){ ir('#/hoy'); return true; } return false; };
 
 /* ---------- COTIZADOR ---------- */
@@ -13,11 +14,15 @@ ruta('cotizar', () => {
   if (soloAdmin()) return;
   const a = A();
   const Q = S.cotizacion = { personas:20, producto_id:'', recetas:[], extras:[], horas:null, empaque:a.empaque_default, envio:0, margen:a.margen_pct, ...(S.cotizacion||{}) };
-  if (!Q.recetas.length && !Q._init){ Q.recetas = S.d.recetas.filter(r => r.tipo !== 'decoracion' && r.tipo !== 'otro').map(r => r.id); }
+  const prodIni = Q.producto_id ? byId('productos', Q.producto_id) : null;
+  if (!Q.recetas.length && !Q._init){ Q.recetas = (prodIni?.recetas || []).filter(r => byId('recetas', r)); if (!Q.recetas.length) Q.recetas = S.d.recetas.filter(r => r.tipo !== 'decoracion' && r.tipo !== 'otro').map(r => r.id); }
+  if (Q.nivel == null) Q.nivel = 0;
   Q._init = true;
   const prod = Q.producto_id ? byId('productos', Q.producto_id) : null;
   const insOpts = S.d.insumos.slice().sort((x,y) => x.nombre.localeCompare(y.nombre)).map(i => `<option value="${i.id}">${esc(i.nombre)} (${i.unidad})</option>`).join('');
   pagina('Cotizador', `
+    ${Q.fotoRef ? `<div class="card"><h2>📷 Foto que mandó el cliente</h2><img src="${esc(Q.fotoRef)}" class="foto-det" style="max-height:300px;object-fit:contain">
+      <p class="muted mini">Elige abajo qué tan elaborada se ve la decoración: suma horas de trabajo al precio.</p></div>` : ''}
     <div class="nota">💡 <b>Método provisional:</b> costo de ingredientes + horas de trabajo + gastos fijos + empaque, y encima la ganancia. Cuando Hilda nos explique cómo saca sus precios, lo ajustamos.</div>
     ${prod ? `<div class="card row"><img src="${esc(prod.foto_url)}" style="width:60px;height:60px;object-fit:cover;border-radius:12px"><div class="grow"><b>${esc(prod.nombre)}</b><div class="muted mini">Precio actual: ${precioTxt(prod)}</div></div><button class="btn sec chico" onclick="S.cotizacion.producto_id='';render()">✕</button></div>` : ''}
     <div class="card">
@@ -37,6 +42,8 @@ ruta('cotizar', () => {
       <button class="btn sec chico" id="qaddx">＋ Agregar material</button>
     </div>
     <div class="card"><h2>Trabajo y otros</h2>
+      <label class="f" style="margin-top:0">¿Qué tan elaborada es la decoración?</label>
+      <div class="chips" style="flex-wrap:wrap">${NIVELES.map(([n,h],k) => `<button type="button" class="chip ${Q.nivel===k?'on':''}" data-niv="${k}">${n}${h ? ' +' + h + ' h' : ''}</button>`).join('')}</div>
       <div class="grid2">
         <div><label class="f">Horas de trabajo</label><input class="i" type="number" step="0.5" inputmode="decimal" id="qhoras" value="${Q.horas ?? ''}"></div>
         <div><label class="f">Empaque (base, caja)</label><input class="i" type="number" inputmode="decimal" id="qemp" value="${Q.empaque}"></div>
@@ -50,7 +57,7 @@ ruta('cotizar', () => {
       <button class="btn" id="qped">${Q.volverA ? '↩ Usar en el pedido' : '＋ Crear pedido'}</button>
       <button class="btn verde" id="qwa">💬 Copiar cotización</button>
     </div>
-    ${prod ? '<button class="btn sec full" id="qprod">💾 Poner este precio en el catálogo</button>' : ''}
+    ${prod ? '<div class="grid2"><button class="btn sec" id="qprod">💾 Precio base del catálogo</button><button class="btn sec" id="qtam">📏 Guardar en tabla de tamaños</button></div>' : ''}
   `, { atras: !!Q.volverA });
 
   const calc = () => {
@@ -66,7 +73,7 @@ ruta('cotizar', () => {
     });
     Q.extras.forEach(x => { const i = byId('insumos', x.insumo_id); if (i) ing += x.cantidad * costoUnit(i); });
     const hEl = $('#qhoras');
-    if (!Q.horasManual){ Q.horas = Math.round(horasAuto * 2) / 2; hEl.value = Q.horas || ''; } else Q.horas = num(hEl.value);
+    if (!Q.horasManual){ Q.horas = Math.round((horasAuto + NIVELES[Q.nivel][1]) * 2) / 2; hEl.value = Q.horas || ''; } else Q.horas = num(hEl.value);
     const mo = Q.horas * num(a.tarifa_hora);
     const fijos = num(a.gastos_fijos_mes) / Math.max(1, num(a.pedidos_mes));
     const costo = ing + mo + fijos + Q.empaque;
@@ -91,12 +98,13 @@ ruta('cotizar', () => {
   $('main').addEventListener('change', calc);
   $('#qaddx').onclick = () => { $('#qext').insertAdjacentHTML('beforeend', filaExtra({ insumo_id:'', cantidad:'' }, Date.now(), insOpts)); };
   $('#qext').addEventListener('click', e => { if (e.target.dataset.delx !== undefined){ e.target.closest('.qx').remove(); calc(); } });
+  $$('[data-niv]').forEach(b => b.onclick = () => { Q.nivel = +b.dataset.niv; Q.horasManual = false; $$('[data-niv]').forEach(x => x.classList.toggle('on', x === b)); calc(); });
   calc();
 
   $('#qped').onclick = () => {
     const R = Q.resultado;
-    if (Q.volverA){ S.borradorPedido = { ...(Q.borrador||{}), precio:R.sug, personas:Q.personas, recetas:Q.recetas, envio:Q.envio }; const v = Q.volverA; S.cotizacion = null; ir(v); return; }
-    S.borradorPedido = { precio:R.sug, personas:Q.personas, recetas:Q.recetas, producto_id:Q.producto_id, descripcion: prod ? prod.nombre : '', estado:'cotizacion', envio:Q.envio };
+    if (Q.volverA){ S.borradorPedido = { ...(Q.borrador||{}), precio:R.sug, costo:Math.round(R.costo), personas:Q.personas, recetas:Q.recetas, envio:Q.envio, _precioFijo:true }; const v = Q.volverA; S.cotizacion = null; ir(v); return; }
+    S.borradorPedido = { ...(Q.extra || {}), precio:R.sug, costo:Math.round(R.costo), personas:Q.personas, recetas:Q.recetas, producto_id:Q.producto_id, descripcion: prod ? prod.nombre : (Q.extra?.descripcion || ''), estado:'cotizacion', envio:Q.envio, _precioFijo:true };
     S.cotizacion = null; ir('#/pedido-nuevo');
   };
   $('#qwa').onclick = async () => {
@@ -104,6 +112,10 @@ ruta('cotizar', () => {
     const txt = `🎂 *Cotización ${S.negocio.nombre || 'Hilda VelPer'}*\n${prod ? prod.nombre + '\n' : ''}Para ${Q.personas} personas: *${money(R.sug)}*${Q.envio ? `\nEnvío: ${money(Q.envio)}\nTotal: *${money(R.total)}*` : ''}\nSe aparta con anticipo. ¡Gracias por tu preferencia! 💜`;
     try { await navigator.clipboard.writeText(txt); toast('📋 Copiada, pégala en WhatsApp'); } catch(e){ prompt('Copia el texto:', txt); }
   };
+  $('#qtam') && ($('#qtam').onclick = async () => {
+    const precios = { ...(prod.precios || {}), [Q.personas]: Q.resultado.sug };
+    await guardar(() => DB.upd('productos', prod.id, { precios }), `📏 Guardado: ${Q.personas} personas = ${money(Q.resultado.sug)}`); await recargar('productos');
+  });
   $('#qprod') && ($('#qprod').onclick = async () => {
     await guardar(() => DB.upd('productos', prod.id, { precio:Q.resultado.sug, personas:Q.personas }), '✅ Precio actualizado en el catálogo'); await recargar('productos');
   });
@@ -120,12 +132,12 @@ ruta('insumos', () => {
   let l = S.d.insumos.slice().sort((a,b) => a.nombre.localeCompare(b.nombre));
   if (busIns) l = l.filter(i => i.nombre.toLowerCase().includes(busIns.toLowerCase()));
   pagina('Materia prima', `
-    <p class="muted">Anota cuánto te costó cada cosa y cuánto traía. La app calcula el costo por gramo, mililitro o pieza.</p>
+    <p class="muted">Anota cuánto te costó cada cosa, cuánto traía y cuánto tienes en la alacena. La app calcula el costo por gramo, mililitro o pieza.</p>
     <div class="row" style="margin-bottom:10px"><input class="i grow" placeholder="🔍 Buscar" value="${esc(busIns)}" oninput="busIns=this.value;clearTimeout(window._tb);window._tb=setTimeout(()=>{render();const i=document.querySelector('main input');i.focus();i.setSelectionRange(99,99)},350)">
       <button class="btn" onclick="modalInsumo()">＋ Nuevo</button></div>
     <div class="card">${l.length ? l.map(i => `<div class="li" onclick="modalInsumo('${i.id}')" style="cursor:pointer">
       <div class="grow"><div class="t">${esc(i.nombre)} ${i.ejemplo ? '<span class="tag cotizacion">precio de ejemplo</span>' : ''}</div>
-      <div class="muted mini">${num(i.presentacion_cantidad)} ${i.unidad} por ${money2(i.presentacion_precio)}${i.proveedor ? ' · ' + esc(i.proveedor) : ''}</div></div>
+      <div class="muted mini">${num(i.presentacion_cantidad)} ${i.unidad} por ${money2(i.presentacion_precio)}${i.proveedor ? ' · ' + esc(i.proveedor) : ''} · <b style="color:${num(i.existencia) > 0 ? 'var(--ok)' : 'var(--gris)'}">tienes ${Math.round(num(i.existencia))} ${i.unidad}</b></div></div>
       <div class="money mini">${money2(costoUnit(i) * (i.unidad === 'pz' ? 1 : 100))}<div class="muted" style="font-weight:400">${i.unidad === 'pz' ? 'por pieza' : 'por 100 ' + i.unidad}</div></div></div>`).join('')
       : vacio('🥚','Agrega tu primera materia prima.')}</div>
   `, { atras:true, nav:'mas' });
@@ -140,10 +152,13 @@ function modalInsumo(id){
       <div><label class="f">¿Cuánto costó?</label><input class="i" name="presentacion_precio" type="number" step="any" inputmode="decimal" required value="${i.presentacion_precio}"></div>
     </div>
     <p class="muted mini">Ej. bolsa de harina de 1000 g que costó $28 · cartón de 30 huevos (30 pz) en $95</p>
+    <label class="f">¿Cuánto tienes en la alacena? (${i.unidad})</label><input class="i" name="existencia" type="number" step="any" inputmode="decimal" value="${num(i.existencia)}">
+    <p class="muted mini">Se suma solo al palomear compras y se descuenta al entregar pedidos.</p>
     <label class="f">¿Dónde lo compras? (opcional)</label><input class="i" name="proveedor" value="${esc(i.proveedor)}">
     <button class="btn full" style="margin-top:14px">Guardar</button>
     ${id ? '<button type="button" class="btn peligro full" style="margin-top:8px" id="bi">Eliminar</button>' : ''}</form>`, m => {
     $('#fi', m).onsubmit = async e => { e.preventDefault(); const f = formData(e.target); f.ejemplo = false;
+      if (id && num(f.presentacion_precio) !== num(i.presentacion_precio)){ f.precio_anterior = num(i.presentacion_precio); f.precio_cambio = new Date().toISOString(); }
       if (!LOCAL) delete f.ejemplo; f.actualizado = new Date().toISOString();
       await guardar(() => id ? DB.upd('insumos', id, f) : DB.ins('insumos', f), '✅ Guardado'); await recargar('insumos'); closeModal(); render(); };
     $('#bi', m) && ($('#bi', m).onclick = async () => { if (!await confirmar('¿Eliminar?')) return; await guardar(() => DB.del('insumos', id), 'Eliminado'); await recargar('insumos','receta_insumos'); closeModal(); render(); });
@@ -215,31 +230,42 @@ ruta('compras', () => {
   const h = hoy(); const lim = ymd(addDays(new Date(), diasCompra));
   const peds = activos().filter(p => { const d = ymd(new Date(p.fecha_entrega)); return d >= h && d <= lim; });
   const tot = {};
-  peds.forEach(p => S.d.pedido_recetas.filter(x => x.pedido_id === p.id).forEach(pr => {
-    S.d.receta_insumos.filter(ri => ri.receta_id === pr.receta_id).forEach(ri => { tot[ri.insumo_id] = (tot[ri.insumo_id] || 0) + num(ri.cantidad) * num(pr.factor); });
-  }));
+  peds.forEach(p => Object.entries(consumoPedido(p)).forEach(([iid, c]) => { tot[iid] = (tot[iid] || 0) + c; }));
   const marcado = JSON.parse(localStorage.getItem('hv_comprado') || '{}');
-  const items = Object.entries(tot).map(([iid, cant]) => ({ i: byId('insumos', iid), cant })).filter(x => x.i).sort((a,b) => a.i.nombre.localeCompare(b.i.nombre));
-  const costoTot = items.reduce((s, x) => s + Math.ceil(x.cant / num(x.i.presentacion_cantidad)) * num(x.i.presentacion_precio), 0);
+  const items = Object.entries(tot).map(([iid, cant]) => { const i = byId('insumos', iid); if (!i) return null;
+      const tengo = num(i.existencia); const falta = Math.max(0, cant - tengo); const pres = Math.max(0.0001, num(i.presentacion_cantidad));
+      return { i, cant, tengo, falta, paq: Math.ceil(falta / pres), pres }; })
+    .filter(Boolean).sort((a,b) => (b.falta > 0) - (a.falta > 0) || a.i.nombre.localeCompare(b.i.nombre));
+  const porComprar = items.filter(x => x.falta > 0);
+  const costoTot = porComprar.reduce((s, x) => s + x.paq * num(x.i.presentacion_precio), 0);
   const tareasC = S.d.tareas.filter(t => t.tipo === 'comprar' && !t.hecho && t.fecha <= lim).sort((a,b) => a.fecha.localeCompare(b.fecha));
   const fmtCant = (c, u) => u === 'pz' ? Math.ceil(c) + ' pz' : c >= 1000 ? (c/1000).toFixed(2).replace(/\.?0+$/,'') + (u === 'g' ? ' kg' : ' L') : Math.round(c) + ' ' + u;
-  S._listaTxt = `🛒 Lista de compras (${peds.length} pedidos, próximos ${diasCompra} días)\n` + items.map(x => `• ${x.i.nombre}: ${fmtCant(x.cant, x.i.unidad)}`).join('\n');
+  S._listaTxt = `🛒 Lista de compras (${peds.length} pedidos, próximos ${diasCompra} días)\n` + porComprar.map(x => `• ${x.i.nombre}: ${x.paq} × ${fmtCant(x.pres, x.i.unidad)}`).join('\n');
   pagina('Lista de compras', `
     <div class="chips">${[7,14,30].map(d => `<button class="chip ${diasCompra===d?'on':''}" onclick="diasCompra=${d};render()">Próximos ${d} días</button>`).join('')}</div>
     ${tareasC.length ? `<div class="card"><h2>Cuándo comprar</h2>${tareasC.map(t => tareaHTML(t)).join('')}</div>` : ''}
     <div class="card"><div class="row between"><h2>Qué comprar</h2><span class="muted mini">${peds.length} pedido(s)</span></div>
-      ${items.length ? items.map(x => { const k = x.i.id + '_' + lim; const paq = Math.ceil(x.cant / num(x.i.presentacion_cantidad));
-        return `<label class="li" style="cursor:pointer"><input type="checkbox" style="width:24px;height:24px;accent-color:var(--ok)" ${marcado[k]?'checked':''} onchange="marcarCompra('${k}',this.checked)">
-          <div class="grow"><div class="t">${esc(x.i.nombre)}</div><div class="muted mini">Necesitas ${fmtCant(x.cant, x.i.unidad)} → ${paq} × ${num(x.i.presentacion_cantidad)} ${x.i.unidad}${x.i.proveedor ? ' · ' + esc(x.i.proveedor) : ''}</div></div>
-          ${isAdmin() ? `<span class="money mini">${money(paq * num(x.i.presentacion_precio))}</span>` : ''}</label>`; }).join('')
+      <p class="muted mini" style="margin-top:-6px">Ya resta lo que hay en la alacena. Palomea al comprar y se suma solo.</p>
+      ${items.length ? items.map(x => { const k = x.i.id + '_' + lim;
+        if (!x.falta && !marcado[k]) return `<div class="li"><div class="ic">✅</div><div class="grow"><div class="t">${esc(x.i.nombre)}</div>
+          <div class="muted mini">Necesitas ${fmtCant(x.cant, x.i.unidad)} · tienes ${fmtCant(x.tengo, x.i.unidad)}: ya alcanza</div></div></div>`;
+        return `<label class="li" style="cursor:pointer"><input type="checkbox" style="width:24px;height:24px;accent-color:var(--ok)" ${marcado[k]?'checked':''} onchange="marcarCompra('${k}',this.checked,'${x.i.id}',${x.paq * x.pres})">
+          <div class="grow"><div class="t">${esc(x.i.nombre)}</div><div class="muted mini">Necesitas ${fmtCant(x.cant, x.i.unidad)}${x.tengo ? ` · tienes ${fmtCant(x.tengo, x.i.unidad)}` : ''} → <b>compra ${x.paq} × ${fmtCant(x.pres, x.i.unidad)}</b>${x.i.proveedor ? ' · ' + esc(x.i.proveedor) : ''}</div></div>
+          ${isAdmin() ? `<span class="money mini">${money(x.paq * num(x.i.presentacion_precio))}</span>` : ''}</label>`; }).join('')
         : vacio('🛒', peds.length ? 'Los pedidos de estas fechas no tienen recetas marcadas.' : 'No hay entregas en estas fechas.')}
-      ${items.length && isAdmin() ? `<div class="res total"><span>Gasto aproximado</span><span>${money(costoTot)}</span></div>` : ''}
+      ${porComprar.length && isAdmin() ? `<div class="res total"><span>Gasto aproximado</span><span>${money(costoTot)}</span></div>` : ''}
     </div>
-    ${items.length ? `<button class="btn verde full" onclick="compartirLista()">💬 Mandar lista por WhatsApp</button>` : ''}
-    <p class="muted mini">Revisa lo que ya tienes en la alacena antes de comprar. Las cantidades salen de las recetas de cada pedido.</p>
+    ${porComprar.length ? `<button class="btn verde full" onclick="compartirLista()">💬 Mandar lista por WhatsApp</button>` : ''}
+    ${isAdmin() ? '<a class="btn sec full" style="margin-top:8px" href="#/insumos">🥚 Ver alacena y precios</a>' : ''}
   `, { atras:true, nav:'mas' });
 });
-function marcarCompra(k, v){ const m = JSON.parse(localStorage.getItem('hv_comprado') || '{}'); if (v) m[k] = 1; else delete m[k]; localStorage.setItem('hv_comprado', JSON.stringify(m)); }
+async function marcarCompra(k, v, iid, cant){
+  const m = JSON.parse(localStorage.getItem('hv_comprado') || '{}');
+  const delta = v ? cant : -(m[k] || cant);
+  if (v) m[k] = cant; else delete m[k];
+  localStorage.setItem('hv_comprado', JSON.stringify(m));
+  try { await sumarExistencia(iid, delta); await recargar('insumos'); toast(v ? '🥚 Sumado a la alacena' : 'Quitado de la alacena'); } catch(e){ toast('⚠️ ' + e.message, 4000); }
+}
 function compartirLista(){ window.open('https://wa.me/?text=' + encodeURIComponent(S._listaTxt), '_blank'); }
 
 /* ---------- CUENTAS ---------- */
@@ -314,18 +340,30 @@ ruta('mas', () => {
   pagina('Más', `
     <div class="card">
       ${it('#/pedidos" onclick="vistaPed=\'cal\'', '📅', 'Calendario', 'Entregas, compras y horneados del mes')}
-      ${it('#/compras', '🛒', 'Lista de compras', 'Qué comprar para los próximos pedidos')}
+      ${it('#/compras', '🛒', 'Lista de compras', 'Qué comprar (ya resta lo de la alacena)')}
+      ${it('#/solicitudes', '📝', `Solicitudes${solNuevas().length ? ` <span class="pill-cnt">${solNuevas().length}</span>` : ''}`, 'Lo que piden los clientes desde el catálogo')}
+      ${it('#/clientes', '👥', 'Clientes', 'Directorio, historial y cumpleaños')}
+      ${isAdmin() ? it('#/estadisticas', '🏆', 'Estadísticas', 'Lo más vendido y mejores clientes') : ''}
       ${isAdmin() ? it('#/cuentas', '💰', 'Cuentas', 'Lo que entra, lo que sale y la ganancia') : ''}
       ${isAdmin() ? it('#/insumos', '🥚', 'Materia prima', 'Precios de ingredientes y material') : ''}
       ${isAdmin() ? it('#/recetas', '📒', 'Recetas', 'Lo que lleva cada pan, relleno y betún') : ''}
+      ${isAdmin() ? it('#/alertas', '📈', 'Alerta de precios', 'Qué subió y qué pasteles dejan poca ganancia') : ''}
+      ${it('#/simulador', '🎂', 'Simulador de pisos', 'Qué moldes y cuántos pisos según las personas')}
       ${it('#/editor', '📸', 'Crear publicación', 'Foto con logo para Facebook, Instagram y WhatsApp')}
+      ${it('#/galeria', '🖼️', 'Antes y después', 'Pasteles terminados contra la foto que mandó el cliente')}
+      ${it('#/temporadas', '📆', 'Temporadas', 'Fechas fuertes del año para preparar promociones')}
+      <a class="li" href="javascript:void 0" onclick="modalTextos('')" style="text-decoration:none;color:inherit"><div class="ic">✍️</div><div class="grow"><div class="t">Textos para redes</div><div class="muted mini">Ideas de texto con hashtags para tus publicaciones</div></div><span style="color:var(--lila)">›</span></a>
     </div>
     <div class="card">
       ${it('#/compartir', '🔗', 'Catálogo para clientes', 'Link y código QR para compartir')}
       ${isAdmin() ? it('#/ajustes', '⚙️', 'Ajustes', 'Negocio, precios, tiempos y usuarios') : ''}
       ${it('#/mejoras', '💡', 'Ideas y mejoras', 'Anota lo que le cambiarías a la app')}
+      <a class="li" href="javascript:void 0" onclick="activarAvisos()" style="text-decoration:none;color:inherit"><div class="ic">🔔</div><div class="grow"><div class="t">Avisos en el celular</div>
+        <div class="muted mini">${'Notification' in window && Notification.permission === 'granted' ? '✅ Activados en este celular' : 'Toca para activar los avisos de tareas'}</div></div><span style="color:var(--lila)">›</span></a>
       ${it('#/ayuda', '❓', 'Ayuda', 'Cómo usar la app')}
     </div>
+    <div class="card"><h3 style="margin-top:0">🌙 Apariencia</h3><div class="chips">${[['claro','☀️ Claro'],['oscuro','🌙 Oscuro'],['auto','📱 Como el celular']]
+      .map(([k,v]) => `<button class="chip ${(localStorage.getItem('hv_tema')||'claro')===k?'on':''}" onclick="cambiarTema('${k}')">${v}</button>`).join('')}</div></div>
     ${LOCAL ? `<div class="card lila"><h3>Modo demo</h3><p class="muted mini">Ver la app como:</p>
       <div class="chips" style="flex-wrap:wrap">${S.d.perfiles.map(u => `<button class="chip ${S.perfil.id===u.id?'on':''}" onclick="localStorage.setItem('hv_yo','${u.id}');location.reload()">${esc(u.nombre)} (${u.rol})</button>`).join('')}</div>
       <button class="btn peligro chico" onclick="if(confirm('¿Borrar todos los datos de prueba y empezar de cero?')){Object.keys(localStorage).filter(k=>k.startsWith('hv_')).forEach(k=>localStorage.removeItem(k));location.reload()}">Reiniciar demo</button></div>`
@@ -347,6 +385,10 @@ ruta('ajustes', () => {
       <label class="f">Link de Facebook</label><input class="i" name="facebook" value="${esc(n.facebook)}">
       <label class="f">Link de Instagram</label><input class="i" name="instagram" value="${esc(n.instagram)}">
       <label class="f">Mensaje del catálogo</label><textarea class="i" name="mensaje_catalogo">${esc(n.mensaje_catalogo)}</textarea>
+      <label class="f">⭐ Link para reseñas de Google (opcional)</label><input class="i" name="resena_google" value="${esc(n.resena_google || '')}" placeholder="https://g.page/r/…/review">
+      <label class="f">⭐ Link para reseñas de Facebook (opcional)</label><input class="i" name="resena_facebook" value="${esc(n.resena_facebook || '')}">
+      <label class="f">🎂 Tus moldes (diámetro cm : porciones, separados por coma)</label><input class="i" name="moldes" value="${esc(n.moldes || '15:12,20:22,25:35,30:50')}">
+      <p class="muted mini">Lo usa el simulador de pisos. Ej. 20:22 = molde de 20 cm da 22 porciones.</p>
       <button class="btn full" style="margin-top:12px">Guardar negocio</button></form>
     <form id="fa" class="card"><h2>Cómo calcular el precio</h2>
       <div class="nota">Provisional: lo ajustamos cuando Hilda explique su método.</div>
@@ -358,7 +400,13 @@ ruta('ajustes', () => {
         ${campo('empaque_default','Empaque normal ($)',a.empaque_default)}
         ${campo('redondeo','Redondear a múltiplos de',a.redondeo)}
         ${campo('precio_persona','Precio por persona ($, opcional)',a.precio_persona)}
+        ${campo('meta_mes','🎯 Meta de ventas del mes ($)',a.meta_mes)}
+        ${campo('margen_minimo','Alertar si la ganancia baja de (%)',a.margen_minimo)}
+        ${campo('anticipo_pct','Anticipo sugerido (%)',a.anticipo_pct)}
       </div>
+      <label class="f">💳 Datos para transferencia (banco, CLABE, a nombre de…)</label><textarea class="i" name="pago_info" rows="3" placeholder="Ej. BBVA · CLABE 012 345 678901234567 · a nombre de Hilda …">${esc(a.pago_info || '')}</textarea>
+      <label class="f">🔗 Link de pago (Mercado Pago u otro, opcional)</label><input class="i" name="link_pago" value="${esc(a.link_pago || '')}" placeholder="https://mpago.la/…">
+      <label class="f">Tamaños de la tabla de precios (personas, separados por coma)</label><input class="i" name="tamanos" value="${esc(a.tamanos)}">
       <h2 style="margin-top:16px">Tiempos (días antes de la entrega)</h2>
       <div class="grid2">
         ${campo('dias_compra','Comprar material',a.dias_compra)}
@@ -366,9 +414,18 @@ ruta('ajustes', () => {
         ${campo('dias_decorado','Decorar',a.dias_decorado)}
         ${campo('umbral_grande','Pastel grande desde (personas)',a.umbral_grande)}
         ${campo('dias_extra_grande','Días extra si es grande',a.dias_extra_grande)}
+        ${campo('capacidad_dia','Máximo de pedidos por día',a.capacidad_dia)}
+        ${campo('aviso_temporada','Avisar temporadas (días antes)',a.aviso_temporada)}
       </div>
       <label class="check"><input type="checkbox" name="recalcular"> Recalcular las tareas de los pedidos activos con estos tiempos</label>
       <button class="btn full" style="margin-top:6px">Guardar precios y tiempos</button></form>
+    <form id="fpl" class="card"><h2>💬 Mensajes de WhatsApp</h2>
+      <p class="muted mini">Puedes usar: {cliente} {pastel} {personas} {fecha} {hora} {entrega} {total} {anticipo} {resta} {negocio}</p>
+      ${Object.keys(PLANTILLAS_DEF).map(k => `<label class="f">${PLANTILLAS_DEF[k].t}</label><textarea class="i" name="${k}" rows="4">${esc(plantilla(k).txt)}</textarea>`).join('')}
+      <div class="grid2" style="margin-top:12px"><button class="btn">Guardar mensajes</button><button type="button" class="btn sec" id="plReset">Restaurar originales</button></div></form>
+    <div class="card"><h2>💾 Respaldo</h2><p class="muted mini">Descarga todo (pedidos, clientes, cuentas, recetas…) en un Excel. Hazlo una vez al mes y guárdalo en Drive.</p>
+      <button class="btn sec" onclick="descargarRespaldo()">⬇️ Descargar respaldo en Excel</button>
+      <p class="muted mini">Último: ${localStorage.getItem('hv_respaldo') ? fCorta(localStorage.getItem('hv_respaldo')) : 'nunca'}</p></div>
     <div class="card"><h2>Usuarios</h2>
       <p class="muted mini">Admin ve todo (cuentas, costos, precios). Ayudante ve pedidos, tareas, catálogo y lista de compras. Toca el nombre para cambiar cómo saluda la app.</p>
       ${S.d.perfiles.map(u => `<div class="li"><div class="grow"><input class="i" style="padding:6px 10px;font-weight:700" value="${esc(u.nombre)}" placeholder="Nombre" onchange="cambiarPerfil('${u.id}',{nombre:this.value.trim()})"><div class="muted mini" style="margin-top:3px">${esc(u.email || '')}</div></div>
@@ -378,6 +435,8 @@ ruta('ajustes', () => {
       ${LOCAL ? '' : '<p class="muted mini">Para agregar a alguien: que abra la app y toque "Crear cuenta"; luego aquí lo activas.</p>'}
     </div>
   `, { atras:true, nav:'mas' });
+  $('#fpl').onsubmit = async e => { e.preventDefault(); S.ajustes = await guardar(() => DB.saveOne('ajustes', { plantillas: formData(e.target) }), '✅ Mensajes guardados'); };
+  $('#plReset').onclick = async () => { if (!await confirmar('¿Regresar los mensajes originales?')) return; S.ajustes = await guardar(() => DB.saveOne('ajustes', { plantillas:{} }), 'Mensajes restaurados'); render(); };
   $('#fn').onsubmit = async e => { e.preventDefault(); S.negocio = await guardar(() => DB.saveOne('negocio', formData(e.target)), '✅ Negocio guardado'); };
   $('#fa').onsubmit = async e => {
     e.preventDefault(); const f = formData(e.target); const rec = f.recalcular; delete f.recalcular;
@@ -450,6 +509,10 @@ ruta('ayuda', () => {
     ${q('¿Cómo hago una imagen para Facebook o WhatsApp?', 'Abre un pastel del <b>Catálogo</b> y toca "Editar imagen para redes". Elige el formato (cuadrado, vertical o historia), acomoda la foto con el dedo, escribe el título y toca <b>Compartir</b>: te deja mandarla directo a WhatsApp, Facebook o Instagram.')}
     ${q('¿Cómo lo paso a mi Google Calendar?', 'En cada pedido hay un botón 📅. Te abre Google Calendar con la fecha y hora ya puestas; solo tocas Guardar. Cada tarea (comprar, hornear) también tiene su 📅.')}
     ${q('¿Quién ve las cuentas?', 'Solo Hilda y Nacho (admins). Papá y la hermana (ayudantes) ven pedidos, tareas, catálogo y la lista de compras, pero no las cuentas ni los costos.')}
+    ${q('¿Qué son las solicitudes?', 'Los clientes pueden pedir cotización desde el catálogo público (botón "Pedir cotización") con foto de referencia. Te llegan a <b>Más → Solicitudes</b> y en Hoy. Desde ahí cotizas con su foto, las conviertes en pedido o les contestas por WhatsApp.')}
+    ${q('¿Cómo funciona la alacena?', 'En <b>Materia prima</b> anota cuánto tienes de cada cosa. La lista de compras solo te pide lo que falta; al palomear lo comprado se suma, y cuando marcas un pedido como Entregado se descuenta lo que usaron sus recetas.')}
+    ${q('¿Cómo pido que me paguen por transferencia?', 'Pon tu CLABE o link de pago en <b>Ajustes</b>. En cada pedido con saldo aparece "Mandar datos de pago": manda por WhatsApp el anticipo sugerido (o lo que resta) con tus datos. Al registrar el pago puedes subir la foto del comprobante.')}
+    ${q('¿Cómo pongo el modo oscuro?', 'En <b>Más → Apariencia</b> elige Oscuro, o "Como el celular" para que cambie solo.')}
     ${q('¿Cómo instalo la app en el celular?', 'Abre el link en Chrome, toca los tres puntitos ⋮ y elige <b>"Agregar a la pantalla principal"</b> o "Instalar app". Queda como una app más con el logo.')}
   `, { atras:true, nav:'mas' });
 });
