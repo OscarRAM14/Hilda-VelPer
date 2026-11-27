@@ -1,7 +1,7 @@
-// Service worker · Hilda VelPer v1.3.0
+// Service worker · Hilda VelPer v1.3.1
 // Permite instalar la app, abrirla sin internet y mostrar avisos de tareas.
-const VERSION = 'hv-1.3.0';
-const SHELL = ['./', 'index.html', 'css/estilos.css', 'js/core.js', 'js/pedidos.js', 'js/catalogo.js', 'js/negocio.js', 'js/extras.js', 'js/tanda2.js',
+const VERSION = 'hv-1.3.1';
+const SHELL = ['./', 'index.html', 'css/estilos.css', 'js/core.js', 'js/pedidos.js', 'js/catalogo.js', 'js/negocio.js', 'js/extras.js', 'js/tanda2.js', 'js/arranque.js',
                'config.js', 'manifest.json', 'img/logo.jpg', 'img/logo-sello.png', 'icons/icon-192.png'];
 
 self.addEventListener('install', e => {

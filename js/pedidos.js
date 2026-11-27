@@ -49,6 +49,7 @@ ruta('hoy', () => {
       <div class="stat"><b>${money(porCobrar)}</b><small>por cobrar</small></div>
       <div class="stat"><b style="color:${ingMes-gasMes>=0?'var(--ok)':'var(--error)'}">${money(ingMes-gasMes)}</b><small>ganancia del mes</small></div>
     </div>` : ''}
+    ${tarjetaArranque()}
     ${tarjetaSolicitudes()}
     ${tarjetaAlertas()}
     ${tarjetaMeta()}

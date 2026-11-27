@@ -135,8 +135,10 @@ ruta('insumos', () => {
     <p class="muted">Anota cuánto te costó cada cosa, cuánto traía y cuánto tienes en la alacena. La app calcula el costo por gramo, mililitro o pieza.</p>
     <div class="row" style="margin-bottom:10px"><input class="i grow" placeholder="🔍 Buscar" value="${esc(busIns)}" oninput="busIns=this.value;clearTimeout(window._tb);window._tb=setTimeout(()=>{render();const i=document.querySelector('main input');i.focus();i.setSelectionRange(99,99)},350)">
       <button class="btn" onclick="modalInsumo()">＋ Nuevo</button></div>
+    ${S.d.insumos.filter(i => !num(i.presentacion_precio)).length ? `<div class="nota">⚠️ ${S.d.insumos.filter(i => !num(i.presentacion_precio)).length} sin precio. Tócalas y pon lo que pagas.</div>` : ''}
+    <button class="btn sec chico" style="margin-bottom:10px" onclick="cargarInsumosBase()">📦 Agregar lista básica de materia prima</button>
     <div class="card">${l.length ? l.map(i => `<div class="li" onclick="modalInsumo('${i.id}')" style="cursor:pointer">
-      <div class="grow"><div class="t">${esc(i.nombre)} ${i.ejemplo ? '<span class="tag cotizacion">precio de ejemplo</span>' : ''}</div>
+      <div class="grow"><div class="t">${esc(i.nombre)} ${i.ejemplo ? '<span class="tag cotizacion">precio de ejemplo</span>' : ''}${!num(i.presentacion_precio) ? '<span class="tag cancelado">falta precio</span>' : ''}</div>
       <div class="muted mini">${num(i.presentacion_cantidad)} ${i.unidad} por ${money2(i.presentacion_precio)}${i.proveedor ? ' · ' + esc(i.proveedor) : ''} · <b style="color:${num(i.existencia) > 0 ? 'var(--ok)' : 'var(--gris)'}">tienes ${Math.round(num(i.existencia))} ${i.unidad}</b></div></div>
       <div class="money mini">${money2(costoUnit(i) * (i.unidad === 'pz' ? 1 : 100))}<div class="muted" style="font-weight:400">${i.unidad === 'pz' ? 'por pieza' : 'por 100 ' + i.unidad}</div></div></div>`).join('')
       : vacio('🥚','Agrega tu primera materia prima.')}</div>
@@ -357,6 +359,8 @@ ruta('mas', () => {
     <div class="card">
       ${it('#/compartir', '🔗', 'Catálogo para clientes', 'Link y código QR para compartir')}
       ${isAdmin() ? it('#/ajustes', '⚙️', 'Ajustes', 'Negocio, precios, tiempos y usuarios') : ''}
+      ${isAdmin() ? it('#/arranque', '🚀', 'Primeros pasos', 'Lo que falta para usar la app con datos reales') : ''}
+      ${isAdmin() ? it('#/metodo', '📝', 'Cuestionario de precios', 'Para que el cotizador calcule como Hilda') : ''}
       ${it('#/mejoras', '💡', 'Ideas y mejoras', 'Anota lo que le cambiarías a la app')}
       <a class="li" href="javascript:void 0" onclick="activarAvisos()" style="text-decoration:none;color:inherit"><div class="ic">🔔</div><div class="grow"><div class="t">Avisos en el celular</div>
         <div class="muted mini">${'Notification' in window && Notification.permission === 'granted' ? '✅ Activados en este celular' : 'Toca para activar los avisos de tareas'}</div></div><span style="color:var(--lila)">›</span></a>

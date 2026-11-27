@@ -1,7 +1,7 @@
 /* =====================================================================
    Hilda VelPer · núcleo: utilidades, base de datos, sesión y rutas
    ===================================================================== */
-const APP_VERSION = '1.3.0';
+const APP_VERSION = '1.3.1';
 const LOCAL = !(window.CONFIG && CONFIG.SUPABASE_URL && CONFIG.SUPABASE_KEY);
 const TABLAS = ['perfiles','clientes','solicitudes','productos','insumos','recetas','receta_insumos','pedidos','pedido_recetas','pagos','tareas','movimientos','mejoras'];
 const CATEGORIAS = ['Pasteles','Cupcakes','Gelatinas','Galletas','Postres','Otros'];
